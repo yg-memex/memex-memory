@@ -1,44 +1,44 @@
-# Evaluation methodology
+# 评测方法
 
-The point of this project is that "it got better" is a claim you can test.
+这个项目的意义在于：「变好了」是一句可以检验的话。
 
-## Sets
+## 集合
 
-| Set | n | Purpose |
+| 集合 | n | 用途 |
 |---|---|---|
-| `dev` | 120 (98 positive + 22 negatives) | daily gate |
-| `holdout v2` | 186 | harder, notes-heavy |
-| `temporal` | 15 | `as_of` queries against superseded facts |
+| `dev` | 120（98 正题 + 22 负例） | 日常闸门 |
+| `holdout v2` | 186 | 更难，偏 note |
+| `temporal` | 15 | 针对被取代事实的 `as_of` 查询 |
 
-Goldens are JSONL: `{id, q, expect, scope, ...}`. Negatives have `expect: null` and must return no confident hit.
+金标是 JSONL：`{id, q, expect, scope, ...}`。负例 `expect: null`，必须不返回高置信命中。
 
-## Metrics
+## 指标
 
-- **Top1** — first hit contains the expected string (case-insensitive substring).
-- **R@5** — any of the top 5 does.
-- **Negatives** — pass only if no hit clears the negative threshold.
-- **MRR** — reciprocal rank computed from **full** text of the hit (not the 160-char cache), so cross-run comparisons are not biased.
-- **p50/p95 latency** — always reported; a gate above 300 ms (rerank) / 50 ms (no rerank) fails.
+- **Top1** —— 第一条命中包含期望字符串（大小写不敏感的子串匹配）。
+- **R@5** —— 前 5 条里有任意一条包含。
+- **负例** —— 只有没有任何命中超过负例阈值才算过。
+- **MRR** —— 用命中**全文**算倒数排名（不是 160 字缓存），避免跨轮比较带偏。
+- **p50/p95 延迟** —— 每次必报；超过 300ms（开重排）/ 50ms（不开重排）即失败。
 
-All reported numbers must state the denominator (`--scope none`, all questions vs positives only). Mixing denominators was the single most confusing bug in our own history; `check_all` and `eval_stats` now print both.
+所有报出的数字必须说明分母（`--scope none`，全部题目 vs 仅正题）。混用分母是我们自己历史上最容易误导人的 bug；`check_all` 和 `eval_stats` 现在两个数都会打。
 
-## Decision rule (pre-registered)
+## 判定规则（预登记）
 
-A change is only "better" if **all** hold:
+一项改动只有**全部**满足才算「更好」：
 
-1. McNemar exact p < 0.05;
-2. bootstrap 95% CI lower bound > 0;
-3. no significant regression on the other set;
-4. negatives all pass;
-5. p95 within budget.
+1. McNemar 精确检验 p < 0.05；
+2. bootstrap 95% CI 下界 > 0；
+3. 另一个集合上没有显著回归；
+4. 负例全过；
+5. p95 在预算内。
 
-On 120 questions the single-set CI is ±6.6 pt, so anything below ~5 pt must be called noise. If you want to detect smaller effects, grow the golden set — not the confidence.
+120 题的单集合 CI 约 ±6.6pt，所以小于 ~5pt 一律叫噪声。想检出更小的效果，去扩金标集，而不是降低置信标准。
 
-## Reproduce
+## 复现
 
 ```bash
 python -m memex.eval_run --set dev --scope none
 python tools/eval_stats.py --a results-a.json --b results-b.json --key hit1
 ```
 
-`eval_stats` prints Δ, CI, McNemar p, per-question flips and a verdict. Negative results belong in the repo too: `docs/` in the private repo keeps a "rejected routes" ledger, and every rejected experiment lists its pre-registered threshold.
+`eval_stats` 会打印 Δ、CI、McNemar p、逐题翻转和判决。负结果同样属于仓库：私有库里有一本「否决台账」，每条被否掉的实验都写着它预登记的及格线。

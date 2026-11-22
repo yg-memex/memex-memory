@@ -1,36 +1,36 @@
-# Architecture
+# 架构
 
-memex is deliberately small: one process, one SQLite file, no background daemons required.
+memex 刻意做小：一个进程、一个 SQLite 文件，不需要常驻后台服务。
 
-## Data model
+## 数据模型
 
-| Table | Holds |
+| 表 | 存什么 |
 |---|---|
-| `memories` | facts and notes: `text`, `scope`, `kind`, `importance`, vector `vec`, `status` (`active`/`superseded`/`archived`), `valid_from`, `valid_to`, `superseded_by_id`, `pinned`, `core_slot` |
-| `edges` | weighted links between memories (same scope / source / supersede chain), used by the graph arm |
-| `embed_cache` | `sha1(text) → vector`, so re-embedding is free |
-| `recall_log` / `recall_hits` | every recall with its hits, scores and policy version — the basis for trace replay and feedback |
-| `schema_meta` | schema version; migrations are idempotent |
+| `memories` | facts 和 notes：`text`、`scope`、`kind`、`importance`、向量 `vec`、`status`（`active`/`superseded`/`archived`）、`valid_from`、`valid_to`、`superseded_by_id`、`pinned`、`core_slot` |
+| `edges` | 记忆之间的带权连接（同 scope / 同来源 / supersede 链），供 graph 臂使用 |
+| `embed_cache` | `sha1(text) → vector`，重复 embedding 不花时间也不花钱 |
+| `recall_log` / `recall_hits` | 每次召回及其命中、分数、策略版本——复放和反馈的基础 |
+| `schema_meta` | schema 版本；迁移幂等 |
 
-Schema v3. `as_of` recall filters facts with `valid_from <= t AND (valid_to = 0 OR valid_to > t)`. Notes currently have no time chain: they are honestly reported as unsupported instead of guessed.
+schema 为 v3。`as_of` 召回按 `valid_from <= t AND (valid_to = 0 OR valid_to > t)` 过滤 facts。notes 目前没有时间链：如实标记为 unsupported，不猜。
 
-## Retrieval pipeline
+## 召回流水线
 
-1. **Arms.** Dense (cosine over cached embeddings), BM25 (SQLite FTS-style scoring in Python, no extra service), graph (weighted expansion from top seeds), optional rerank (external HTTP cross-encoder).
-2. **Fusion.** Per-arm normalization, then weighted sum from the policy (`w_dense`, `w_bm25`, `w_graph`; `w_act` off by default because activation proved query-independent).
-3. **Rerank.** Optional. Pool of 20 candidates, 280 ms deadline, automatic fallback to lexical scoring on timeout. Off by default; enabling it is a policy change, not a code change.
-4. **Output.** Hits carry `id/text/score/dense_sim/arms`; every recall writes a `trace_id` so a result can be replayed later.
+1. **各臂。** dense（对缓存向量做 cosine）、BM25（用 Python 实现 SQLite 风格的打分，不引入额外服务）、graph（从 top 种子做带权扩展）、可选重排（外部 HTTP cross-encoder）。
+2. **融合。** 各臂先归一化，再按策略加权求和（`w_dense`、`w_bm25`、`w_graph`；`w_act` 默认关闭，因为实测激活强度与查询无关）。
+3. **重排。** 可选。候选池 20 条、280ms 截止，超时自动降级回词法打分。默认关闭；开启是改策略，不是改代码。
+4. **输出。** 命中带 `id/text/score/dense_sim/arms`；每次召回写一个 `trace_id`，之后可以复放。
 
-## Write path
+## 写入路径
 
-`Writer.add` deduplicates against existing vectors in the same scope (cos > 0.92 merges), computes importance when not supplied, and records provenance (`source`). `supersede()` keeps the old row, stamps `valid_to`/`superseded_by_id`, and moves any `pinned`/`core_slot` marker to the successor — the core block must never point at a dead row.
+`Writer.add` 在同一个 scope 内按余弦去重（> 0.92 合并），没给 importance 时自动算，并记录来源（`source`）。`supersede()` 保留旧行，写入 `valid_to`/`superseded_by_id`，并把 `pinned`/`core_slot` 标记迁到后继——core 块永远不能指向一条死行。
 
-## Core block
+## core 块
 
-`render_core(con, budget=1200)` sorts pinned-first by slot order (`identity → rule → preference → project → other`), greedily fills up to the character budget, and reports what did not fit in `dropped` with a reason. Nothing is silently truncated; `version` is a hash of `(budget, id:text …)` so consumers can cache.
+`render_core(con, budget=1200)` 按槽位顺序（`identity → rule → preference → project → other`）pinned 优先排序，在字符预算内贪心填充，装不下的进 `dropped` 并带原因。不做静默截断；`version` 是 `(budget, id:text …)` 的哈希，方便消费方缓存。
 
-## Processes
+## 进程
 
-- `python -m memex.http` — HTTP API + panel, binds 127.0.0.1 only.
-- `python -m memex.server_mcp` — MCP stdio server (needs `pip install -e ".[mcp]"`).
-- Everything else is a library call.
+- `python -m memex.http` —— HTTP API + 面板，只监听 127.0.0.1。
+- `python -m memex.server_mcp` —— MCP stdio 服务（需要 `pip install -e ".[mcp]"`）。
+- 其余都是一次库调用。

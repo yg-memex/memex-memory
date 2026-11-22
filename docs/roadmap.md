@@ -1,22 +1,22 @@
-# Roadmap
+# 路线图
 
-## Now (v0.1.0a1)
+## 现在（v0.1.0a1）
 
-- [x] Single-file store, schema v3, idempotent migrations
-- [x] Four-arm recall with versioned policy and automatic fallback
-- [x] Core block with hard budget, `dropped`, and a version hash
-- [x] HTTP + MCP + single-file panel
-- [x] Trace log, replay, and the feedback endpoint (activation decay)
-- [x] Paired significance testing in-repo
+- [x] 单文件存储、schema v3、幂等迁移
+- [x] 四臂召回，策略带版本、可自动降级
+- [x] core 块：硬预算、`dropped`、版本哈希
+- [x] HTTP + MCP + 单文件面板
+- [x] 召回日志、复放、反馈接口（激活衰减）
+- [x] 仓库内置配对显著性检验
 
-## Next
+## 接下来
 
-- [ ] Pluggable note chunking (generic markdown, no vault-specific code)
-- [ ] A demo video / GIF of the panel pinning a rule and watching it appear in the next session
-- [ ] Docker one-liner (`docker run -v $PWD/data:/app/data memex`) — needs a decision on shipping Ollama or requiring an external endpoint
-- [ ] More goldens: 400-question set for detecting ≤3 pt effects
-- [ ] Optional local cross-encoder path (ONNX) so rerank works without an extra HTTP process
+- [ ] 可插拔的 note 切块（通用 markdown，不含任何 vault 私有代码）
+- [ ] 一段 10 秒的 GIF：在面板里 pin 一条规则，下一次会话它就出现在上下文里
+- [ ] Docker 一行启动（`docker run -v $PWD/data:/app/data memex`）——需要先决定是内置 Ollama 还是要求外部端点
+- [ ] 更大的金标：400 题，用于检出 ≤3pt 的差异
+- [ ] 可选的本地 cross-encoder（ONNX），不额外起 HTTP 进程也能重排
 
-## Not planned
+## 不做
 
-Multi-tenant, hosted cloud, vector database dependency, or auto-summarising memories away from their source text. If you need those, use a different project.
+多租户、托管云、依赖向量数据库、把记忆自动摘要成脱离原文的东西。你要这些，去用别的项目。

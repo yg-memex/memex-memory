@@ -1,36 +1,36 @@
 # memex
 
-[![ci](https://github.com/2083472126zt/memex-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/2083472126zt/memex-memory/actions/workflows/ci.yml)
+[![ci](https://github.com/yg-memex/memex-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/yg-memex/memex-memory/actions/workflows/ci.yml)
 
-**Local-first, verifiable memory for AI agents.** One SQLite file. No cloud, no vendor lock-in, no hidden prompts.
+**本地优先、可验证的 AI 记忆层。** 一个 SQLite 文件。不联网、不绑供应商、没有藏在提示词里的暗逻辑。
 
-> Status: **alpha (v0.1.0a1)**. The API surface is small and stable enough to use; the schema is versioned and self-migrating. Expect changes between minor versions.
+> 状态：**alpha（v0.1.0a1）**。API 面很小，够用；schema 带版本、自动迁移。小版本之间接口可能变。
 
-Agents forget everything between sessions. memex is the smallest thing that fixes it without becoming a second brain you can't audit:
+Agent 一换会话就失忆。memex 是修这个问题最小的东西——它不会长成你审不了的「第二大脑」：
 
-- **Store facts, not transcripts.** Each memory is a short, self-contained sentence you can read, edit, and delete.
-- **Recall is measurable.** Four retrieval arms (dense + BM25 + graph + optional rerank) fused into one ranking. A golden set and a bootstrap/McNemar harness are part of the repo, not an afterthought.
-- **History is explicit.** Facts are superseded, never overwritten; `as_of` queries can replay what was true on a given date.
-- **A core block is always in context.** Pin rules/preferences and they get injected every session, with a hard budget and no silent truncation (~743 chars in our own deployment).
+- **存事实，不存聊天记录。** 每条记忆是一句能读懂、能改、能删的独立事实。
+- **召回是可度量的。** 四路召回（dense + BM25 + graph + 可选重排）融合成一个排序；金标集和 bootstrap/McNemar 显著性工具就在仓库里，不是事后补的。
+- **历史是显式的。** 事实只会被 supersede（取代），不会被覆盖；`as_of` 能回放某一天「当时是什么说法」。
+- **core 块常驻上下文。** 规则/偏好 pin 进去，每次会话自动注入，有硬预算、超了如实报 `dropped`，不静默截断（我们自己部署时约 743 字）。
 
-![memex panel](docs/images/panel.png)
+![memex 面板](docs/images/panel.png)
 
-*The panel: core block by slot, budget usage, a recall sandbox, decay curves, and policy/DB state. Everything shown is editable or deletable in place.*
+*面板：按槽位分组的 core 块、预算占用、召回沙盒、衰减曲线、策略与库状态。界面上看到的都能就地改或删。*
 
-## Quickstart
+## 快速开始
 
 ```bash
-pip install -e .                       # numpy only; Python 3.11+
-export MEMEX_EMBED_BASE=http://127.0.0.1:11434/v1   # any OpenAI-compatible /embeddings
+pip install -e .                       # 只依赖 numpy，Python 3.11+
+export MEMEX_EMBED_BASE=http://127.0.0.1:11434/v1   # 任何 OpenAI 兼容 /embeddings
 export MEMEX_EMBED_MODEL=bge-m3
-python tools/make_demo.py              # builds demo/memex-demo.db (synthetic data)
-python tools/check_all.py              # offline self-check, should print GREEN
-MEMEX_DB=demo/memex-demo.db python -m memex.http --port 8901   # panel: http://127.0.0.1:8901/
+python tools/make_demo.py              # 生成 demo/memex-demo.db（全合成数据）
+python tools/check_all.py              # 离线自检，应输出 GREEN
+MEMEX_DB=demo/memex-demo.db python -m memex.http --port 8901   # 面板：http://127.0.0.1:8901/
 ```
 
-No embedding server? Install Ollama and `ollama pull bge-m3` — that is the intended offline setup. SiliconFlow / vLLM / LM Studio work too.
+没有 embedding 服务？装 Ollama 再 `ollama pull bge-m3`，这就是推荐的本地方案。硅基流动 / vLLM / LM Studio 也都能用。
 
-### As an MCP server
+### 作为 MCP 服务
 
 ```bash
 pip install -e ".[mcp]"
@@ -40,79 +40,79 @@ pip install -e ".[mcp]"
 {"mcpServers":{"memex":{"command":"python","args":["-m","memex.server_mcp"]}}}
 ```
 
-Tools: `recall`, `remember`, `stats`, `core`, `core_pin`, `core_unpin`, `memory_get`, `memory_update`, `memory_forget`.
+工具：`recall`、`remember`、`stats`、`core`、`core_pin`、`core_unpin`、`memory_get`、`memory_update`、`memory_forget`。
 
-### HTTP
+### HTTP 接口
 
-| Method | Path | What |
+| 方法 | 路径 | 作用 |
 |---|---|---|
-| POST | `/recall` | `{q, k, scope}` → ranked hits with `trace_id`, each hit carries `cited` |
+| POST | `/recall` | `{q, k, scope}` → 带 `trace_id` 的排序结果，每条 hit 带 `cited` |
 | POST | `/remember` | `{text, scope, kind, source, importance}` |
-| GET | `/core?budget=1200` | rendered core block + `dropped` list |
-| POST | `/core/pin`, `/core/unpin` | pin a memory into a slot (`identity/rule/preference/project/other`) |
-| GET/PUT/DELETE | `/memory/<id>` | read, edit (re-embeds), archive |
-| GET | `/traces?limit=20`, `/trace/<id>` | recent recalls / one replay |
-| POST | `/feedback` | `{trace_id, hit_ids, used}` — the only real activation-decay signal |
+| GET | `/core?budget=1200` | 渲染 core 块 + `dropped` 清单 |
+| POST | `/core/pin`、`/core/unpin` | 把一条记忆 pin 进槽位（`identity/rule/preference/project/other`） |
+| GET/PUT/DELETE | `/memory/<id>` | 读、改（会重算向量）、归档 |
+| GET | `/traces?limit=20`、`/trace/<id>` | 最近召回 / 复放某一次 |
+| POST | `/feedback` | `{trace_id, hit_ids, used}` —— 激活衰减唯一的真实信号 |
 
-## How it works
+## 怎么工作的
 
 ```
-query ──► dense (bge-m3) ─┐
-      ──► BM25 (SQLite)  ─┼─► normalize + weighted fusion ─► optional rerank ─► top-k
-      ──► graph (edges)  ─┘
+query ──► dense（bge-m3）──┐
+      ──► BM25（SQLite）  ─┼─► 归一化 + 加权融合 ─► 可选重排 ─► top-k
+      ──► graph（edges）  ─┘
 ```
 
-- Weights live in `data/active_policy.json` (falls back to `DEFAULT_POLICY`); every change is a file you can diff and roll back.
-- The write path (`memex/write.py`) deduplicates by cosine > 0.92, supersedes instead of overwriting, and keeps a `superseded_by` chain.
-- Schema is at v3 with idempotent migrations (`memex/db.py`); `as_of` recall filters on `valid_from/valid_to` (facts only).
-- Everything is stdlib + numpy. The reranker is an external HTTP process (`bge-reranker-v2-m3`) and is **off by default**.
+- 权重在 `data/active_policy.json`（没有就用 `DEFAULT_POLICY`）；每次改都是一个能 diff、能回滚的文件。
+- 写入路径（`memex/write.py`）按 cosine > 0.92 去重，用 supersede 代替覆盖，保留 `superseded_by` 链。
+- schema 在 v3，迁移幂等（`memex/db.py`）；`as_of` 召回按 `valid_from/valid_to` 过滤（仅 facts）。
+- 全部代码是标准库 + numpy。重排器是外部 HTTP 进程（`bge-reranker-v2-m3`），**默认关闭**。
 
-## Current numbers (measured on our own golden sets)
+## 当前数字（在我们自己的金标集上测的）
 
-| Set | Top1 | R@5 | note |
+| 集合 | Top1 | R@5 | 备注 |
 |---|---|---|---|
-| dev (120 q, incl. 22 negatives) | **84.2%** | **95.8%** | positive-only: 80.6% / 94.9% (n=98) |
-| holdout v2 (186 q) | **72.6%** | **86.0%** | notes-heavy, harder |
-| temporal (15 q, `as_of`) | **86.7%** | 100% | vs 6.7% for "current-only" |
+| dev（120 题，含 22 条负例） | **84.2%** | **95.8%** | 仅正题：80.6% / 94.9%（n=98） |
+| holdout v2（186 题） | **72.6%** | **86.0%** | 偏 note，更难 |
+| temporal（15 题，`as_of`） | **86.7%** | 100% | 现行对照只有 6.7% |
 
-Two honest caveats, because this repo is about verification:
+两条老实话，因为这个仓库讲的就是「可验证」：
 
-1. On 120 questions the 95% CI is roughly ±6.6 pt. Differences under ~5 pt are noise; the repo therefore ships a paired bootstrap + McNemar harness (`tools/eval_stats.py`) and refuses to call a change "better" unless `p < 0.05` **and** the CI lower bound is above zero.
-2. The numbers above were produced with a reranker on a specific machine. They are a measured state, not a leaderboard claim.
+1. 120 题的 95% 置信区间约 ±6.6 个百分点。小于 ~5pt 的差异一律算噪声；所以仓库自带配对 bootstrap + McNemar 工具（`tools/eval_stats.py`），只有 `p < 0.05` **且** CI 下界大于 0 才允许说「变好了」。
+2. 上面的数字是在一台特定机器上、开着重排测出来的。它是一份测量结果，不是排行榜宣言。
 
-## Configuration
+## 配置
 
-| Env | Default | Meaning |
+| 环境变量 | 默认值 | 含义 |
 |---|---|---|
-| `MEMEX_DB` | `data/memex.db` (repo-relative) | database path |
-| `MEMEX_EMBED_BASE` | `http://127.0.0.1:11434/v1` | OpenAI-compatible embeddings base |
-| `MEMEX_EMBED_MODEL` | `bge-m3` | embedding model |
-| `MEMEX_EMBED_KEY` | `ollama` | API key (any value for Ollama) |
-| `MEMEX_EMBED_TIMEOUT` / `_BATCH` | `60` / `32` | request tuning |
-| `MEMEX_GOLDEN_DIR` | `eval/golden` | golden set directory for `eval_run` |
+| `MEMEX_DB` | `data/memex.db`（相对仓库） | 数据库路径 |
+| `MEMEX_EMBED_BASE` | `http://127.0.0.1:11434/v1` | OpenAI 兼容的 embeddings 地址 |
+| `MEMEX_EMBED_MODEL` | `bge-m3` | embedding 模型 |
+| `MEMEX_EMBED_KEY` | `ollama` | API key（Ollama 随便填） |
+| `MEMEX_EMBED_TIMEOUT` / `_BATCH` | `60` / `32` | 请求调参 |
+| `MEMEX_GOLDEN_DIR` | `eval/golden` | `eval_run` 用的金标目录 |
 
-Rerank: set `"use_rerank": true` in `data/active_policy.json` and point `rerank_api_base` at a bge-reranker server. Off by default so a fresh clone runs with zero external services.
+重排：在 `data/active_policy.json` 里设 `"use_rerank": true`，并把 `rerank_api_base` 指到 bge-reranker 服务。默认关，保证新克隆零外部服务也能跑。
 
-## Repo map
+## 目录
 
 ```
-memex/        library (recall, write, core, db, embed, http, server_mcp, eval)
-tools/        make_demo.py, check_all.py, eval_stats.py
-tests/        plain-python tests (no pytest needed)
-demo/         synthetic demo database
-docs/         architecture, evaluation notes, roadmap
-panel/        single-file web panel (pin/unpin, edit, delete, trace replay)
-examples/     MCP config, curl recipes
+memex/        库（recall、write、core、db、embed、http、server_mcp、eval）
+tools/        make_demo.py、check_all.py、eval_stats.py
+tests/        纯 python 测试（不需要 pytest）
+demo/         合成数据 demo 库
+docs/         架构、评测说明、路线图
+panel/        单文件网页面板（pin/unpin、编辑、删除、召回复放）
+examples/     MCP 配置、curl 示例
 ```
 
-## Docs
+## 文档
 
-- [Architecture](docs/architecture.md)
-- [Evaluation methodology](docs/eval.md)
-- [Roadmap](docs/roadmap.md)
+- [架构](docs/architecture.md)
+- [评测方法](docs/eval.md)
+- [路线图](docs/roadmap.md)
 
-## Contributing
+## 参与
 
-Issues and PRs welcome. Two house rules: every behavioral change needs a falsifiable acceptance criterion, and no test may depend on the author's machine or private data.
+欢迎 issue 和 PR。两条规矩：任何行为改动都要带一条可证伪的验收标准；测试不许依赖作者本机的数据或私有路径。
 
-MIT licensed.
+MIT 许可。
