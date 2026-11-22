@@ -20,5 +20,5 @@ jobs:
           cache: pip
       - name: install
         run: pip install -e .
-      - name: self-check (offline: demo DB ships with cached query vectors)
+      - name: self-check (offline, demo DB ships with cached query vectors)
         run: python tools/check_all.py
