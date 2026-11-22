@@ -2,22 +2,48 @@
 
 [![ci](https://github.com/yg-memex/memex-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/yg-memex/memex-memory/actions/workflows/ci.yml)
 
-**Local-first, verifiable memory for AI agents.** One SQLite file. No cloud, no vendor lock-in, no hidden prompts.
+**Memory for AI agents: one SQLite file, local, and it can be verified.** No cloud, no vendor lock-in, no memories silently summarised into something you can't audit.
 
-> Status: **alpha (v0.1.0a1)**. The API surface is small and stable enough to use; the schema is versioned and self-migrating. Expect changes between minor versions.
+> Status: **alpha (v0.1.0a1)**. Small API; versioned, self-migrating schema.
 
-Chinese README: [README.md](README.md)
+中文版：[README.md](README.md)
 
-Agents forget everything between sessions. memex is the smallest thing that fixes it without becoming a second brain you can't audit:
+## What it actually fixes
 
-- **Store facts, not transcripts.** Each memory is a short, self-contained sentence you can read, edit, and delete.
-- **Recall is measurable.** Four retrieval arms (dense + BM25 + graph + optional rerank) fused into one ranking. A golden set and a bootstrap/McNemar harness are part of the repo, not an afterthought.
-- **History is explicit.** Facts are superseded, never overwritten; `as_of` queries can replay what was true on a given date.
-- **A core block is always in context.** Pin rules/preferences and they get injected every session, with a hard budget and no silent truncation (~743 chars in our own deployment).
+Agents forget between sessions, so you keep re-introducing yourself: who I am, where the project lives, what we decided last time, what not to do. memex stores those as short facts and brings them back when asked — nothing more.
 
-![memex panel](docs/images/panel.png)
+## In 30 seconds
 
-*The panel: core block by slot, budget usage, a recall sandbox, decay curves, and policy/DB state. Everything shown is editable or deletable in place.*
+```
+you: which TTS did I settle on?
+memex: breeze (switched on 10-24), previously Qwen3; the reason was …
+       [cited memory #3f9a, #8c21]
+```
+
+For that to work, four things must be true, and each has a verifiable implementation:
+
+| Requirement | How memex does it | How it's proven |
+|---|---|---|
+| It knows who you are at session start | **Core block**: pinned identity/rules/preferences injected every session, hard 1200-char budget | Visible and editable in the panel; over-budget items are reported as `dropped`, never silently cut |
+| Old facts come back first | **Four arms at once**: dense, BM25, graph, optional local rerank | 120-question golden set: Top1 84.2%, R@5 95.8% |
+| Wrong memories can be fixed, old versions still queryable | Facts are **superseded, not overwritten**; `as_of` replays any date | 15-question temporal set: 86.7% vs 6.7% for current-only |
+| You know whether a change helped | McNemar + bootstrap shipped in-repo; <5 pt is called noise | 10 self-checks per CI run; red means no merge |
+
+## Standing on shoulders
+
+Most of the ideas are borrowed from mature projects, then reshaped for *local + verifiable*:
+
+| Borrowed | From | How memex lands it | Our trade-off |
+|---|---|---|---|
+| Always-on core memory | Letta / MemGPT | Slot-pinned rules/preferences/identity, 1200-char budget, `dropped` with reasons | No "ever-growing prompt": we drop and report instead of truncating |
+| Facts expire, they aren't overwritten | Zep / Graphiti bi-temporal | `superseded_by` + `valid_from/valid_to` + `as_of` | Facts only; notes without a time chain are marked unsupported honestly |
+| Write-time dedupe / merge | Mem0 memory operations | cosine > 0.92 merge, old row keeps the chain | No LLM extraction: no cost, latency, or hallucination; source text stays traceable |
+| Small chunks, bigger context | RAG parent-document | Markdown-aware chunking shipped; parent backfill rejected | The rejection is logged too: +3 questions, p=0.45 — not significant |
+| Paired significance + CIs | Standard eval practice | McNemar exact, 5000× bootstrap, MRR | On 120 questions CI is ±6.6 pt, so "+1 pt" is not a result here |
+| Local reranking | Local cross-encoder setups | bge-reranker over HTTP, **off by default** | p95 160 ms with rerank; works without it |
+| Visible, editable, attributable | ChatGPT / Claude memory panels | Panel pin/edit/delete, `trace_id` per recall, `cited` on hits | No black-box memory: every claim points back to a row |
+| Engineering discipline | Mature OSS | Versioned migrations, one-command 10-item self-check, CI on 3.11/3.12 | No feature lands without an acceptance criterion |
+| **Deliberately not copied** | — | Multi-tenancy, hosted cloud, vector DB, summary-replaces-source | One user + one SQLite file is the advantage |
 
 ## Quickstart
 
@@ -31,6 +57,10 @@ MEMEX_DB=demo/memex-demo.db python -m memex.http --port 8901   # panel: http://1
 ```
 
 No embedding server? Install Ollama and `ollama pull bge-m3` — that is the intended offline setup. SiliconFlow / vLLM / LM Studio work too.
+
+![memex panel](docs/images/panel.png)
+
+*The panel: core block by slot, budget usage, a recall sandbox, decay curves, policy/DB state. Everything shown is editable or deletable in place.*
 
 ### As an MCP server
 
@@ -65,22 +95,22 @@ query ──► dense (bge-m3) ─┐
 ```
 
 - Weights live in `data/active_policy.json` (falls back to `DEFAULT_POLICY`); every change is a file you can diff and roll back.
-- The write path (`memex/write.py`) deduplicates by cosine > 0.92, supersedes instead of overwriting, and keeps a `superseded_by` chain.
-- Schema is at v3 with idempotent migrations (`memex/db.py`); `as_of` recall filters on `valid_from/valid_to` (facts only).
-- Everything is stdlib + numpy. The reranker is an external HTTP process (`bge-reranker-v2-m3`) and is **off by default**.
+- The write path deduplicates by cosine > 0.92, supersedes instead of overwriting, and keeps a `superseded_by` chain.
+- Schema v3, idempotent migrations; `as_of` filters on `valid_from/valid_to` (facts only).
+- stdlib + numpy only. The reranker is an external HTTP process (`bge-reranker-v2-m3`) and is **off by default**.
 
-## Current numbers (measured on our own golden sets)
+## Current numbers (our own golden sets)
 
 | Set | Top1 | R@5 | note |
 |---|---|---|---|
 | dev (120 q, incl. 22 negatives) | **84.2%** | **95.8%** | positive-only: 80.6% / 94.9% (n=98) |
 | holdout v2 (186 q) | **72.6%** | **86.0%** | notes-heavy, harder |
-| temporal (15 q, `as_of`) | **86.7%** | 100% | vs 6.7% for "current-only" |
+| temporal (15 q, `as_of`) | **86.7%** | 100% | vs 6.7% current-only |
 
-Two honest caveats, because this repo is about verification:
+Two honest caveats:
 
-1. On 120 questions the 95% CI is roughly ±6.6 pt. Differences under ~5 pt are noise; the repo therefore ships a paired bootstrap + McNemar harness (`tools/eval_stats.py`) and refuses to call a change "better" unless `p < 0.05` **and** the CI lower bound is above zero.
-2. The numbers above were produced with a reranker on a specific machine. They are a measured state, not a leaderboard claim.
+1. On 120 questions the 95% CI is ~±6.6 pt. Differences under ~5 pt are noise; the repo ships the paired harness and refuses to call a change "better" unless `p < 0.05` **and** CI lower bound > 0.
+2. Numbers were produced on one machine with rerank on. A measured state, not a leaderboard claim.
 
 ## Configuration
 
@@ -89,11 +119,11 @@ Two honest caveats, because this repo is about verification:
 | `MEMEX_DB` | `data/memex.db` (repo-relative) | database path |
 | `MEMEX_EMBED_BASE` | `http://127.0.0.1:11434/v1` | OpenAI-compatible embeddings base |
 | `MEMEX_EMBED_MODEL` | `bge-m3` | embedding model |
-| `MEMEX_EMBED_KEY` | `ollama` | API key (any value for Ollama) |
+| `MEMEX_EMBED_KEY` | `ollama` | API key |
 | `MEMEX_EMBED_TIMEOUT` / `_BATCH` | `60` / `32` | request tuning |
-| `MEMEX_GOLDEN_DIR` | `eval/golden` | golden set directory for `eval_run` |
+| `MEMEX_GOLDEN_DIR` | `eval/golden` | golden set dir for `eval_run` |
 
-Rerank: set `"use_rerank": true` in `data/active_policy.json` and point `rerank_api_base` at a bge-reranker server. Off by default so a fresh clone runs with zero external services.
+Rerank: set `"use_rerank": true` in `data/active_policy.json` and point `rerank_api_base` at a bge-reranker server.
 
 ## Repo map
 

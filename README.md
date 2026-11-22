@@ -2,20 +2,49 @@
 
 [![ci](https://github.com/yg-memex/memex-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/yg-memex/memex-memory/actions/workflows/ci.yml)
 
-**本地优先、可验证的 AI 记忆层。** 一个 SQLite 文件。不联网、不绑供应商、没有藏在提示词里的暗逻辑。
+**给 AI 用的记忆库：一个 SQLite 文件，本地跑，记得住、查得准、还改得动。**
 
-> 状态：**alpha（v0.1.0a1）**。API 面很小，够用；schema 带版本、自动迁移。小版本之间接口可能变。
+不联网、不绑供应商、不把记忆偷偷摘要成你审不了的东西。
 
-Agent 一换会话就失忆。memex 是修这个问题最小的东西——它不会长成你审不了的「第二大脑」：
+> 状态：alpha（v0.1.0a1）。API 很小，够用；schema 带版本、自动迁移。
 
-- **存事实，不存聊天记录。** 每条记忆是一句能读懂、能改、能删的独立事实。
-- **召回是可度量的。** 四路召回（dense + BM25 + graph + 可选重排）融合成一个排序；金标集和 bootstrap/McNemar 显著性工具就在仓库里，不是事后补的。
-- **历史是显式的。** 事实只会被 supersede（取代），不会被覆盖；`as_of` 能回放某一天「当时是什么说法」。
-- **core 块常驻上下文。** 规则/偏好 pin 进去，每次会话自动注入，有硬预算、超了如实报 `dropped`，不静默截断（我们自己部署时约 743 字）。
+## 它到底解决什么
 
-![memex 面板](docs/images/panel.png)
+Agent 一换会话就失忆，于是你反复自报家门：我是谁、项目在哪、上次定了什么、哪些事别干。
+把这几样长期记住，再让它在被问到时准确翻出来 —— 就这两件事。
 
-*面板：按槽位分组的 core 块、预算占用、召回沙盒、衰减曲线、策略与库状态。界面上看到的都能就地改或删。*
+## 30 秒看懂
+
+```
+你：我上次说 TTS 用哪个？
+memex：breeze（10-24 换的），之前是 Qwen3；换的原因是……
+       [引用了记忆 #3f9a、#8c21]
+```
+
+要让这句话成立，得同时做到四件事，memex 每件都做了一个能验证的版本：
+
+| 要做到 | memex 的做法 | 怎么证明 |
+|---|---|---|
+| 一开口就知道你是谁 | **core 块**：身份/规则/偏好 pin 进去，每次会话自动注入，1200 字硬预算 | 面板上看得见、改得动；超预算如实报 `dropped` |
+| 问一件旧事，第一条就是答案 | **四种找法同时上**：意思相近、关键词、关系网、再加一道本地精排 | 金标集 120 题，Top1 84.2%、前五 95.8% |
+| 记错了能改，旧说法还能查 | **事实只被取代、不被覆盖**；`as_of` 回放某一天的说法 | 15 题时间金标：`as_of` 86.7%，现行对照只有 6.7% |
+| 改了参数，能知道到底变好没有 | 仓库自带 McNemar + bootstrap；小于 5pt 一律叫噪声 | CI 每次跑 10 项自检，红的就合不进去 |
+
+## 博采众长，但不照抄
+
+这套东西不是凭空造的，亮点大多是从成熟项目里挑出来、再按「本地 + 可验证」改过的：
+
+| 借鉴的点 | 从哪来 | memex 怎么落地 | 我们的取舍 |
+|---|---|---|---|
+| 核心记忆块常驻上下文 | Letta / MemGPT | rule/preference/identity 分槽 pin，1200 字预算，`dropped` 带原因 | 不做「越写越长的提示词」：超预算宁可少放，也不静默截断 |
+| 事实过期是失效，不是覆盖 | Zep / Graphiti 的双时态 | `superseded_by` + `valid_from/valid_to` + `as_of` 查询 | 只对 facts 承诺；notes 没时间链就如实标 unsupported，不猜 |
+| 写入时判重、合并 | Mem0 的记忆操作 | cosine > 0.92 合并，旧条留链 | 不用 LLM 抽记忆：省成本、省延迟、不引入幻觉，原文永远可追溯 |
+| 小块检索、大块喂 | RAG 的 parent-document | 切块先做了 md 感知；父块回扩被我们否掉 | 否决也写进台账：+3 题但 p=0.45，不显著，不吹 |
+| 配对显著性 + 置信区间 | 评测统计的标准做法 | 内置 McNemar 精确检验、5000 次 bootstrap、MRR | 120 题 CI ±6.6pt，所以「涨了 1pt」在这个仓库不算成绩 |
+| 本地重排 | 本地 cross-encoder 实践 | 本机 bge-reranker 走 HTTP，**默认关** | 开着重排 p95 160ms；关掉也能跑，只是排序差一点 |
+| 可见、可改、可删、标明出处 | ChatGPT / Claude 的记忆面板 | 面板 pin/编辑/删除，每条召回带 `trace_id`，答案能标 `cited` | 不做「黑盒记忆」：每条结论都能点回到具体那条记忆 |
+| 工程纪律 | 成熟开源项目 | schema 迁移、一条命令 10 项自检、CI 跑 3.11/3.12 | 不为功能丢掉闸门：没有验收标准的改动不进 main |
+| **明确不抄** | — | 多租户、云托管、向量数据库、自动摘要替代原文 | 单用户 + 一个 SQLite 文件才是它的优势 |
 
 ## 快速开始
 
@@ -29,6 +58,10 @@ MEMEX_DB=demo/memex-demo.db python -m memex.http --port 8901   # 面板：http:/
 ```
 
 没有 embedding 服务？装 Ollama 再 `ollama pull bge-m3`，这就是推荐的本地方案。硅基流动 / vLLM / LM Studio 也都能用。
+
+![memex 面板](docs/images/panel.png)
+
+*面板：按槽位分组的 core 块、预算占用、召回沙盒、衰减曲线、策略与库状态。界面上看到的都能就地改或删。*
 
 ### 作为 MCP 服务
 
@@ -57,17 +90,17 @@ pip install -e ".[mcp]"
 ## 怎么工作的
 
 ```
-query ──► dense（bge-m3）──┐
-      ──► BM25（SQLite）  ─┼─► 归一化 + 加权融合 ─► 可选重排 ─► top-k
-      ──► graph（edges）  ─┘
+query ──► 意思相近（bge-m3）──┐
+      ──► 关键词（BM25）     ─┼─► 归一化 + 加权融合 ─► 可选重排 ─► top-k
+      ──► 关系网（edges）    ─┘
 ```
 
-- 权重在 `data/active_policy.json`（没有就用 `DEFAULT_POLICY`）；每次改都是一个能 diff、能回滚的文件。
-- 写入路径（`memex/write.py`）按 cosine > 0.92 去重，用 supersede 代替覆盖，保留 `superseded_by` 链。
-- schema 在 v3，迁移幂等（`memex/db.py`）；`as_of` 召回按 `valid_from/valid_to` 过滤（仅 facts）。
-- 全部代码是标准库 + numpy。重排器是外部 HTTP 进程（`bge-reranker-v2-m3`），**默认关闭**。
+- 权重在 `data/active_policy.json`（没有就用内置默认）；每次改都是一个能 diff、能回滚的文件。
+- 写入按 cosine > 0.92 去重，用 supersede 代替覆盖，保留 `superseded_by` 链。
+- schema 在 v3，迁移幂等；`as_of` 召回按 `valid_from/valid_to` 过滤（仅 facts）。
+- 全部代码是标准库 + numpy。重排器是外部 HTTP 进程（`bge-reranker-v2-m3`），默认关闭。
 
-## 当前数字（在我们自己的金标集上测的）
+## 当前数字（我们自己金标集上测的）
 
 | 集合 | Top1 | R@5 | 备注 |
 |---|---|---|---|
@@ -75,10 +108,10 @@ query ──► dense（bge-m3）──┐
 | holdout v2（186 题） | **72.6%** | **86.0%** | 偏 note，更难 |
 | temporal（15 题，`as_of`） | **86.7%** | 100% | 现行对照只有 6.7% |
 
-两条老实话，因为这个仓库讲的就是「可验证」：
+两句老实话，因为这个仓库讲的就是「可验证」：
 
-1. 120 题的 95% 置信区间约 ±6.6 个百分点。小于 ~5pt 的差异一律算噪声；所以仓库自带配对 bootstrap + McNemar 工具（`tools/eval_stats.py`），只有 `p < 0.05` **且** CI 下界大于 0 才允许说「变好了」。
-2. 上面的数字是在一台特定机器上、开着重排测出来的。它是一份测量结果，不是排行榜宣言。
+1. 120 题的 95% 置信区间约 ±6.6 个百分点，小于 ~5pt 的差异一律算噪声。所以仓库自带配对检验，只有 `p < 0.05` **且** CI 下界大于 0 才允许说「变好了」。
+2. 这些数字是在一台特定机器上、开着重排测出来的。它是一份测量结果，不是排行榜宣言。
 
 ## 配置
 
@@ -91,7 +124,7 @@ query ──► dense（bge-m3）──┐
 | `MEMEX_EMBED_TIMEOUT` / `_BATCH` | `60` / `32` | 请求调参 |
 | `MEMEX_GOLDEN_DIR` | `eval/golden` | `eval_run` 用的金标目录 |
 
-重排：在 `data/active_policy.json` 里设 `"use_rerank": true`，并把 `rerank_api_base` 指到 bge-reranker 服务。默认关，保证新克隆零外部服务也能跑。
+重排：在 `data/active_policy.json` 里设 `"use_rerank": true`，并把 `rerank_api_base` 指到 bge-reranker 服务。
 
 ## 目录
 
