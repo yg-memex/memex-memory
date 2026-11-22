@@ -6,3 +6,6 @@ dist/
 *.egg-info/
 data/
 logs/
+_shot.db
+_shot.db-*
+.edges/
