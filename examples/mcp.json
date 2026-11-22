@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "memex": {
+      "command": "python",
+      "args": ["-m", "memex.server_mcp"],
+      "env": {
+        "MEMEX_DB": "data/memex.db",
+        "MEMEX_EMBED_BASE": "http://127.0.0.1:11434/v1",
+        "MEMEX_EMBED_MODEL": "bge-m3"
+      }
+    }
+  }
+}

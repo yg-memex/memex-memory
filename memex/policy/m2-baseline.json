@@ -1,0 +1,10 @@
+{
+ "version": 0,
+ "w_dense": 0.7,
+ "w_bm25": 0.25,
+ "w_act": 0.0,
+ "w_graph": 0.05,
+ "rerank": false,
+ "use_rerank": false,
+ "note": "M2 回滚位：与现役 DEFAULT_POLICY 完全一致（关重排）。p95 8ms，dev 80.8/94.2。"
+}

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memex-memory"
+version = "0.1.0a1"
+description = "Local-first, verifiable memory layer for AI agents (single SQLite file, no API lock-in)."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26"]
+keywords = ["memory", "rag", "sqlite", "agents", "local-first"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0"]
+dev = ["build"]
+
+[project.scripts]
+memex-http = "memex.http:main"
+memex-mcp = "memex.server_mcp:main"
+
+[tool.setuptools]
+packages = ["memex"]
+
+[tool.setuptools.package-data]
+memex = ["policy/*.json"]

@@ -1,0 +1,8 @@
+{"id":"d01","scope":"facts","kind":"lexical","q":"alice 用什么编辑器写 python","expect":["VS Code"]}
+{"id":"d02","scope":"facts","kind":"lexical","q":"alice 的消息偏好是什么样的","expect":["短句"]}
+{"id":"d03","scope":"facts","kind":"lexical","q":"alice 的项目数据放在哪个盘","expect":["D 盘"]}
+{"id":"d04","scope":"facts","kind":"lexical","q":"alice 什么时候整理笔记","expect":["周五"]}
+{"id":"d05","scope":"facts","kind":"semantic","q":"本地跑向量模型用的什么模型","expect":["bge-m3"]}
+{"id":"d06","scope":"facts","kind":"lexical","q":"评测口径为什么要带参数","expect":["--scope none"]}
+{"id":"d07","scope":"facts","kind":"negative","q":"alice 养猫吗","expect":[]}
+{"id":"d08","scope":"facts","kind":"negative","q":"memex 支持云端多租户吗","expect":[]}

@@ -1,0 +1,77 @@
+{
+ "version": 0,
+ "w_dense": 0.55,
+ "w_bm25": 0.35,
+ "w_act": 0.0,
+ "w_graph": 0.1,
+ "arms": [
+  "dense",
+  "bm25",
+  "graph"
+ ],
+ "score": {
+  "n": 120,
+  "top1": 0.725,
+  "r5": 0.9417,
+  "p50_ms": 13.6,
+  "p95_ms": 15.2,
+  "avg_chars": 0
+ },
+ "eval": {
+  "set": "dev",
+  "n": 120,
+  "arms": [
+   "dense",
+   "bm25",
+   "graph"
+  ],
+  "scope": "none",
+  "groups": {
+   "facts/lexical": {
+    "n": 32,
+    "top1": 0.7188,
+    "r5": 0.9062,
+    "p50_ms": 13.2,
+    "p95_ms": 15.6,
+    "avg_chars": 0
+   },
+   "facts/negative": {
+    "n": 22,
+    "top1": 1.0,
+    "r5": 1.0,
+    "p50_ms": 14.0,
+    "p95_ms": 15.2,
+    "avg_chars": 0
+   },
+   "facts/semantic": {
+    "n": 26,
+    "top1": 0.7308,
+    "r5": 0.9231,
+    "p50_ms": 13.4,
+    "p95_ms": 15.2,
+    "avg_chars": 0
+   },
+   "notes/lexical": {
+    "n": 21,
+    "top1": 0.619,
+    "r5": 1.0,
+    "p50_ms": 13.7,
+    "p95_ms": 15.1,
+    "avg_chars": 0
+   },
+   "notes/semantic": {
+    "n": 19,
+    "top1": 0.5263,
+    "r5": 0.8947,
+    "p50_ms": 14.0,
+    "p95_ms": 15.0,
+    "avg_chars": 0
+   }
+  },
+  "rank": 3,
+  "searched": 30,
+  "step": 0.05,
+  "run_at": "2026-11-22T12:23:21"
+ },
+ "note": "tune 第 3 名（dev，30 组里搜出来的）。采纳由 M5 决定，别手改 DEFAULT_POLICY。"
+}

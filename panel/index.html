@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>memex 面板 · 召回为什么是这几条</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --line:#e3e6eb; --ink:#1b1f24; --muted:#6b7280;
+    --accent:#2f6feb; --dense:#2f6feb; --bm25:#7c4dff; --act:#0f9d58; --graph:#d97706; --rr:#e2436b;
+    --warn:#b45309; --warnbg:#fff7ed; --ok:#0f7b3e;
+    --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:14px 20px;position:sticky;top:0;z-index:9}
+  h1{margin:0 0 8px;font-size:16px;font-weight:650;letter-spacing:.2px}
+  h1 small{font-weight:400;color:var(--muted);font-size:12px;margin-left:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{background:#f1f3f6;border:1px solid var(--line);border-radius:6px;padding:4px 9px;font-size:12px;color:var(--muted)}
+  .chip b{color:var(--ink);font-weight:600}
+  .chip.warn{background:var(--warnbg);border-color:#fed7aa;color:var(--warn)}
+  .chip.ok{background:#f0fdf4;border-color:#bbf7d0;color:var(--ok)}
+  main{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;padding:16px 20px 40px}
+  @media(max-width:1080px){main{grid-template-columns:minmax(0,1fr)}}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  section h2{margin:0 0 10px;font-size:13px;font-weight:650;color:#374151;text-transform:none}
+  .hint{color:var(--muted);font-size:12px}
+  form{display:flex;gap:8px;margin-bottom:10px}
+  input[type=text]{flex:1;min-width:0;padding:9px 11px;border:1px solid #cfd4dc;border-radius:7px;font-size:14px;background:#fff}
+  input[type=text]:focus{outline:2px solid #bfd3ff;border-color:var(--accent)}
+  select,button{padding:9px 12px;border:1px solid #cfd4dc;border-radius:7px;background:#fff;font-size:13px;cursor:pointer}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  button.primary:disabled{opacity:.55;cursor:progress}
+  .presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .presets button{font-size:12px;padding:4px 9px;color:#374151}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;color:var(--muted);font-weight:600;border-bottom:1px solid var(--line);padding:6px 6px;white-space:nowrap}
+  td{border-bottom:1px solid #f0f2f5;padding:7px 6px;vertical-align:top}
+  tr.hit{cursor:pointer}
+  tr.hit:hover{background:#f8fafc}
+  tr.hit.sel{background:#eef4ff}
+  .num{font-family:var(--mono);font-size:12px;white-space:nowrap}
+  .txt{color:#111827;word-break:break-word}
+  .arm{display:inline-block;border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:11px;margin:0 3px 3px 0;color:#fff}
+  .arm.dense{background:var(--dense)} .arm.bm25{background:var(--bm25)}
+  .arm.act{background:var(--act)} .arm.graph{background:var(--graph)} .arm.rr{background:var(--rr)}
+  .id{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .wbar{display:flex;gap:2px;height:6px;border-radius:3px;overflow:hidden;margin-top:5px;background:#eef0f3}
+  .wbar i{display:block;height:100%}
+  canvas{width:100%;height:230px;display:block}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:11.5px;color:var(--muted)}
+  .legend i{display:inline-block;width:16px;height:3px;border-radius:2px;margin-right:5px;vertical-align:2px}
+  .kv{display:grid;grid-template-columns:78px 1fr;gap:4px 10px;font-size:12.5px}
+  .kv dt{color:var(--muted)} .kv dd{margin:0}
+  .card{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fbfcfd;margin-bottom:10px}
+  .card .q{font-size:13px;color:#111827;margin-bottom:6px}
+  .pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .pill{border:1px solid var(--line);background:#fff;border-radius:99px;padding:2px 9px;font-size:11.5px;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill:hover{border-color:var(--accent);color:var(--accent)}
+  .err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:9px 11px;font-size:12.5px;margin:10px 0}
+  .empty{color:var(--muted);font-size:12.5px;padding:10px 0}
+  footer{padding:0 20px 28px;color:var(--muted);font-size:11.5px}
+  code{font-family:var(--mono);font-size:11.5px;background:#f1f3f6;padding:1px 5px;border-radius:4px}
+
+  /* ---------- ⓪ core 块（R6）：可见 / 可 pin / 可改 / 可删 ---------- */
+  section.wide{grid-column:1/-1}
+  #coreSec h2{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  #coreHdr{font-weight:400;font-size:12px}
+  #coreHdr b{font-family:var(--mono);font-weight:600;color:var(--ink)}
+  .bbar{display:flex;gap:2px;height:12px;border-radius:6px;overflow:hidden;background:#eef0f3}
+  .bbar i{display:block;height:100%}
+  .bbar i.over{background:repeating-linear-gradient(45deg,#ef4444,#ef4444 5px,#fca5a5 5px,#fca5a5 10px)}
+  .bmeta{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:7px 0 12px;font-size:12px;color:var(--muted)}
+  .bmeta .used{color:var(--ink);font-weight:650;font-family:var(--mono)}
+  .bmeta .grow{flex:1}
+  .bmeta button{font-size:11.5px;padding:3px 9px}
+  .slotblk{margin:0 0 11px}
+  .slotblk h3{margin:0 0 6px;font-size:12px;color:#374151;font-weight:650;display:flex;align-items:center;gap:7px}
+  .dot{width:8px;height:8px;border-radius:2px;display:inline-block;flex:0 0 auto}
+  .slotblk h3 .cnt{color:var(--muted);font-family:var(--mono);font-size:11px;font-weight:400}
+  ul.citems{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:6px}
+  li.citem{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;
+           padding:8px 10px;background:#fbfcfd;min-width:0}
+  li.citem:hover{border-color:#cfd4dc}
+  li.citem.off{opacity:.62;background:#fff;border-style:dashed}
+  .star{flex:0 0 auto;width:22px;height:22px;line-height:20px;text-align:center;border-radius:6px;
+        border:1px solid var(--line);background:#fff;cursor:pointer;font-size:12px;color:#c4c8cf;padding:0}
+  .star.on{color:#b45309;border-color:#fed7aa;background:#fffbeb}
+  .star:disabled{cursor:default;opacity:.6}
+  .cbody{flex:1;min-width:0}
+  .ctext{color:#111827;word-break:break-word;font-size:12.5px;line-height:1.5}
+  .cmeta{margin-top:3px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:11px;
+         color:var(--muted);font-family:var(--mono)}
+  .cacts{flex:0 0 auto;display:flex;gap:4px}
+  .cacts button{font-size:11px;padding:2px 7px;border:1px solid #cfd4dc;border-radius:6px;
+                background:#fff;cursor:pointer;color:#374151}
+  .cacts button:hover{border-color:var(--accent);color:var(--accent)}
+  .cacts button.del:hover{border-color:#b91c1c;color:#b91c1c}
+  .cedit{width:100%;min-height:58px;padding:6px 8px;border:1px solid var(--accent);border-radius:7px;
+         font:12.5px/1.55 inherit;resize:vertical;background:#fff}
+  .ceditbar{display:flex;gap:6px;align-items:center;margin-top:5px;font-size:11px;color:var(--muted)}
+  .ceditbar .grow{flex:1}
+  .ceditbar button{font-size:11px;padding:2px 8px}
+  .cconfirm{margin-top:6px;border:1px solid #fecaca;background:#fef2f2;border-radius:6px;
+            padding:6px 8px;font-size:11.5px;color:#b91c1c;display:flex;gap:8px;align-items:center}
+  .cconfirm .grow{flex:1}
+  .cconfirm button{font-size:11px;padding:2px 8px;border:1px solid #fecaca;border-radius:6px;
+                   background:#fff;color:#b91c1c;cursor:pointer}
+  .cconfirm button.solid{background:#b91c1c;border-color:#b91c1c;color:#fff}
+  .dropbox{border:1px solid #fed7aa;background:var(--warnbg);border-radius:8px;padding:9px 11px;margin:0 0 11px}
+  .dropbox h3{margin:0 0 4px;font-size:12.5px;color:var(--warn);font-weight:650}
+  .dropbox ul{margin:5px 0 0;padding-left:18px;font-size:12px;color:#7c2d12}
+  .dropbox li{margin:2px 0}
+  .gap-note{background:#f8fafc;border:1px dashed #cbd5e1;border-radius:6px;padding:6px 9px;
+            font-size:11.5px;color:#475569;margin-top:8px}
+  #flash{position:fixed;right:18px;bottom:18px;z-index:99;background:#111827;color:#fff;
+         border-radius:8px;padding:9px 13px;font-size:12.5px;line-height:1.5;
+         box-shadow:0 6px 20px rgba(0,0,0,.18);opacity:0;transition:opacity .2s;max-width:440px}
+  #flash.bad{background:#991b1b}
+  #flash.ok{background:#065f46}
+
+  /* ---------- ⑤ 最近召回 / 复放 / 引用回写（R7） ---------- */
+  .citebar{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;margin-top:9px;
+           padding-top:8px;border-top:1px dashed var(--line);font-size:12px}
+  .citebar .k{color:var(--muted);flex:0 0 auto}
+  .citebar .v{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .citebar .v.has{color:var(--ok)}
+  .citebar .cid{display:inline-block;background:#f0fdf4;border:1px solid #bbf7d0;color:var(--ok);
+                border-radius:5px;padding:0 6px;margin:0 4px 2px 0}
+  .tgrid{display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:12px}
+  @media(max-width:920px){.tgrid{grid-template-columns:minmax(0,1fr)}}
+  .tlist{max-height:430px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fbfcfd}
+  .trow{padding:7px 9px;border-bottom:1px solid #f0f2f5;cursor:pointer}
+  .trow:last-child{border-bottom:0}
+  .trow:hover{background:#f8fafc}
+  .trow.sel{background:#eef4ff;box-shadow:inset 2px 0 0 var(--accent)}
+  .trow .tq{font-size:12px;color:#111827;word-break:break-word}
+  .trow .tm{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:3px;
+            font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .cn{border-radius:99px;padding:0 6px;background:#eef0f3;color:var(--muted);
+      font-family:var(--mono);font-size:10.5px}
+  .cn.on{background:#f0fdf4;border:1px solid #bbf7d0;color:var(--ok)}
+  .tview{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fff;min-height:150px}
+  .thdr{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;
+        color:var(--muted);margin-bottom:8px}
+  .thdr code{user-select:all}
+  tr.hrow.cited{background:#f7fdf9}
+  .usebtn{font-size:11px;padding:2px 8px;border:1px solid #cfd4dc;border-radius:6px;
+          background:#fff;cursor:pointer;color:#374151;white-space:nowrap}
+  .usebtn:hover{border-color:var(--ok);color:var(--ok)}
+  .tick{color:var(--ok);font-weight:650;font-size:11.5px;white-space:nowrap}
+</style>
+</head>
+<body>
+<header>
+  <h1>memex 召回面板 <small>这一条为什么是它 —— 四臂名次 / 重排分 / 衰减 / 边</small></h1>
+  <div class="chips" id="chips"><span class="chip">加载中…</span></div>
+  <div class="citebar">
+    <span class="k">本次引用了：</span>
+    <span class="v" id="citeIds">未回写</span>
+  </div>
+</header>
+
+<main>
+  <section class="wide" id="coreSec">
+    <h2><span style="color:var(--muted);font-family:var(--mono);font-size:12px">⓪</span>
+      core 块 · 每次会话开局常驻的 ≤1200 字
+      <span class="hint" id="coreHdr">读取中…</span>
+    </h2>
+    <div id="coreBudget"></div>
+    <div id="coreBody"></div>
+  </section>
+
+  <section>
+    <h2>① 查一次，看召回是怎么来的</h2>
+    <form id="form">
+      <input type="text" id="q" placeholder="例：端口 9886 / 老板的预算 / cordis.patch.yml 怎么加 mcp" autocomplete="off">
+      <select id="scope">
+        <option value="">全库（MCP 默认）</option>
+        <option value="facts">facts</option>
+        <option value="notes">notes</option>
+      </select>
+      <button class="primary" id="go" type="submit">召回</button>
+    </form>
+    <div class="presets" id="presets"></div>
+    <div id="recallMsg" class="hint"></div>
+    <div id="results"></div>
+  </section>
+
+  <section>
+    <h2>② 衰减：重要性 × exp(−Δt / S)</h2>
+    <canvas id="decay" width="720" height="230"></canvas>
+    <div class="legend" id="legend"></div>
+    <div class="hint" style="margin-top:8px">
+      实线 = 库里真实记忆按「多少天没被访问」分桶后的平均留存（<span id="decayN">-</span> 条）；
+      虚线 = 各衰减档的理论曲线。S 由 <code>decay_tier</code> 决定（tier0 = 永固）。
+    </div>
+  </section>
+
+  <section>
+    <h2>③ 边：这条记忆和谁连着</h2>
+    <div id="node" class="empty">点上面任意一条命中，或点下面的「枢纽」节点。</div>
+    <div class="hint" style="margin-top:10px">度数最高的 8 个节点：</div>
+    <div class="pills" id="hubs"></div>
+  </section>
+
+  <section>
+    <h2>④ 库与策略</h2>
+    <dl class="kv" id="kv"></dl>
+  </section>
+
+  <section class="wide" id="traceSec">
+    <h2><span style="color:var(--muted);font-family:var(--mono);font-size:12px">⑤</span>
+      最近召回 · 点一条复放，逐条回写「这条用上了」
+      <span class="hint" id="traceHdr">读取中…</span>
+      <button type="button" id="traceReload" style="font-size:11.5px;padding:3px 9px;margin-left:6px">刷新</button>
+    </h2>
+    <div class="tgrid">
+      <div class="tlist" id="traceList"><div class="empty" style="padding:10px">读取中…</div></div>
+      <div class="tview" id="traceView">
+        <div class="empty">左边点一条召回，这里复放它的命中明细（名次 / 分数 / 各臂 / 是否被引用）。</div>
+      </div>
+    </div>
+    <div class="gap-note">
+      「这条用上了」只回写命中标记（<code>POST /feedback</code>），不会改你的记忆正文；
+      引用状态是<b>按次</b>的 —— 同一条在别的 trace 里仍然是未引用。顶部那一行跟着当前复放的这次召回走。
+    </div>
+  </section>
+</main>
+
+<footer>
+  数据源 <code>/panel/data</code> · <code>/recall</code> · <code>/core</code> · <code>/memory/&lt;id&gt;</code>（都走 127.0.0.1）· 不引用任何 CDN ·
+  ⓪ 块的 pin / unpin / 编辑 / 删除都<b>真写库</b>（<code>POST /core/pin|unpin</code>、<code>PUT|DELETE /memory/&lt;id&gt;</code>；
+  删除是归档 <code>status=archived</code>，行还在、可恢复）·
+  数字口径以页面顶部「基线」为准，别拿旧报表做决定。
+</footer>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pct = (x) => (x == null ? "—" : (x * 100).toFixed(1) + "%");
+const num = (x, d = 3) => (x == null ? "—" : Number(x).toFixed(d));
+let DATA = null;
+
+function chip(text, cls = "") { return `<span class="chip ${cls}">${text}</span>`; }
+
+function renderHeader(d) {
+  const p = d.policy, b = d.baseline, db = d.db;
+  const src = p.source.startsWith("data/") ? "data/active_policy.json" : "DEFAULT_POLICY（内置）";
+  const srcCls = p.source.startsWith("data/") ? "ok" : "";
+  const w = p.weights || {};
+  const bar = ["w_dense", "w_bm25", "w_act", "w_graph"].map((k) => {
+    const v = Number(w[k] || 0);
+    const col = { w_dense: "var(--dense)", w_bm25: "var(--bm25)", w_act: "var(--act)", w_graph: "var(--graph)" }[k];
+    return `<i style="width:${(v * 100).toFixed(1)}%;background:${col}"></i>`;
+  }).join("");
+
+  // 重排链路：本地 8903 / 远程 / 关 —— 必须一眼看出来，否则「数字变了」会被怀疑成抖动
+  let rr = chip("重排 <b>关</b>（纯融合）");
+  if (p.use_rerank) {
+    const host = p.rerank_host ? `${p.rerank_host}${(p.rerank_api_base || "").match(/:(\d+)/) ? ":" + (p.rerank_api_base || "").match(/:(\d+)/)[1] : ""}` : (p.rerank_api_base || "?");
+    const ok = p.rerank_where === "本地";
+    rr = chip(`重排 <b>${esc(p.rerank_where || "?")}</b> · ${esc(p.rerank_backend || "")}` +
+              `　host <b>${esc(host)}</b>` +
+              `　pool <b>${p.rerank_pool ?? "—"}</b>` +
+              (p.api_parallel_n ? ` × ${p.api_parallel_n} 片` : "") +
+              `　query_strip <b>${p.query_strip ? "开" : "关"}</b>`, ok ? "ok" : "");
+  }
+
+  let base = chip("基线：没有可用报表", "warn");
+  if (b && b.top1 != null) {
+    const scopeNote = b.scope === "none"
+      ? chip("口径 全库", "ok")
+      : chip("⚠ 该报表没记 scope（可能是 oracle 口径，虚高约 9 点）", "warn");
+    base = chip(`基线 <b>${pct(b.top1)}</b> / R@5 <b>${pct(b.r5)}</b>` +
+                `　n=${b.n ?? "?"}　p95 ${b.p95_ms ?? "?"}ms`) + scopeNote +
+           chip(`来源 <b>${esc(b.file)}</b>　${esc((b.run_at || "").replace("T", " "))}` +
+                (b.official ? "" : "（非官方产物）"), b.official ? "" : "warn");
+  }
+
+  $("#chips").innerHTML = [
+    chip(`策略来源 <b>${src}</b>　version=${p.version ?? "—"}`, srcCls),
+    chip(`arms <b>${esc((p.arms || []).join(","))}</b>`),
+    rr,
+    chip(`权重 dense ${num(w.w_dense,2)} / bm25 ${num(w.w_bm25,2)} / act ${num(w.w_act,2)} / graph ${num(w.w_graph,2)}
+          <span class="wbar" style="display:flex">${bar}</span>`),
+    base,
+    chip(`库 <b>${db.active}</b> 条 active（共 ${db.all}）　边 <b>${db.edges}</b>（无向 ${db.edge_pairs} 对）`),
+  ].join("");
+}
+
+function renderKv(d) {
+  const p = d.policy, db = d.db;
+  const scopes = Object.entries(db.scopes || {}).map(([k, v]) => `${k} ${v}`).join("　");
+  $("#kv").innerHTML = [
+    ["策略文件", `<code>${esc(p.path)}</code>${p.source.startsWith("data/") ? "" : "（不存在，用内置默认）"}`],
+    ["生效权重", `dense ${num(p.weights.w_dense,2)} · bm25 ${num(p.weights.w_bm25,2)} · act ${num(p.weights.w_act,2)} · graph ${num(p.weights.w_graph,2)}`],
+    ["arms / 重排", `${esc((p.arms || []).join(","))} / use_rerank=${p.use_rerank}`],
+    ["重排链路", p.use_rerank
+      ? `后端 <b>${esc(p.rerank_backend || "?")}</b> · 落点 <b>${esc(p.rerank_where || "?")}</b> <code>${esc(p.rerank_api_base || "?")}</code>`
+        + ` · pool ${p.rerank_pool ?? "—"}${p.api_parallel_n ? ` × ${p.api_parallel_n} 片并发` : ""}`
+        + ` · 截止 ${p.api_deadline_ms ?? "—"}ms · 缓存 doc 前缀 ${p.cache_doc_chars ?? 0} 字`
+      : "关（只用 dense+bm25 融合）"],
+    ["库文件", `<code>${esc(db.path)}</code>`],
+    ["记忆", `active ${db.active}　·　${scopes}`],
+    ["边", `${db.edges} 行（co_token/co_source 双向存）→ 无向 ${db.edge_pairs} 对`],
+    ["数据口径", d.baseline ? `最近报表 <code>${esc(d.baseline.file)}</code>${d.baseline.scope === "none" ? "（全库）" : "（scope 未标注）"}` : "—"],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+}
+
+/* ---------- 衰减曲线 ---------- */
+function drawDecay(d) {
+  const cv = $("#decay"), ctx = cv.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth || 720, H = 230;
+  cv.width = W * dpr; cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const pad = { l: 38, r: 12, t: 12, b: 26 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+  const days = d.days || 60;
+  const x = (day) => pad.l + (day / days) * iw;
+  const y = (v) => pad.t + (1 - Math.max(0, Math.min(1, v))) * ih;
+
+  ctx.strokeStyle = "#eceff3"; ctx.lineWidth = 1; ctx.font = "11px " + getComputedStyle(document.body).fontFamily;
+  ctx.fillStyle = "#9aa3af";
+  [0, 0.25, 0.5, 0.75, 1].forEach((v) => {
+    ctx.beginPath(); ctx.moveTo(pad.l, y(v)); ctx.lineTo(W - pad.r, y(v)); ctx.stroke();
+    ctx.fillText(v.toFixed(2), 8, y(v) + 4);
+  });
+  [0, Math.round(days / 3), Math.round(2 * days / 3), days].forEach((day) => {
+    ctx.fillText(day + "d", x(day) - 8, H - 8);
+  });
+
+  const colors = ["#c7ccd4", "#94a3b8", "#0f9d58", "#2f6feb", "#d97706"];
+  (d.tiers || []).forEach((t, i) => {
+    if (t.stability >= 999) return;                       // tier0 永固，画出来是条直线，没信息
+    const step = days / (t.points.length - 1 || 1);
+    ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1.4;
+    ctx.strokeStyle = colors[i % colors.length] + "99";
+    t.points.forEach((v, k) => { const px = x(k * step), py = y(v); k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+    ctx.stroke(); ctx.setLineDash([]);
+  });
+
+  const s = (d.series || []).filter((p) => p.n >= 3);
+  if (s.length) {
+    ctx.beginPath(); ctx.lineWidth = 2.2; ctx.strokeStyle = "#e2436b";
+    s.forEach((p, i) => { const px = x(p.day), py = y(p.avg); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+    ctx.stroke();
+    s.forEach((p) => {
+      ctx.beginPath(); ctx.arc(x(p.day), y(p.avg), 3, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "#e2436b"; ctx.lineWidth = 1.6; ctx.stroke();
+    });
+  }
+
+  const total = (d.tiers || []).reduce((a, t) => a + t.n, 0);
+  $("#decayN").textContent = total;
+  $("#legend").innerHTML =
+    `<span><i style="background:#e2436b"></i>真实分布（按未访问天数分桶）</span>` +
+    (d.tiers || []).filter((t) => t.stability < 999).map((t, i) =>
+      `<span><i style="background:${colors[i % colors.length]}"></i>tier ${t.tier} · S=${t.stability}d · ${t.n} 条</span>`).join("") +
+    (d.tiers || []).filter((t) => t.stability >= 999).map((t) =>
+      `<span><i style="background:#dfe3e8"></i>tier ${t.tier} · 永固 · ${t.n} 条</span>`).join("");
+}
+
+/* ---------- 召回 ---------- */
+function armChips(arms) {
+  if (!arms || !arms.length) return `<span class="hint">（负例不返回）</span>`;
+  return arms.map((a) => {
+    const name = a.split("#")[0];
+    const cls = name === "dense" ? "dense" : name === "bm25" ? "bm25" : name === "act" ? "act"
+              : name === "graph" ? "graph" : "rr";
+    return `<span class="arm ${cls}">${esc(a)}</span>`;
+  }).join("");
+}
+
+function renderHits(res, q) {
+  if (!res || !res.hits || !res.hits.length) {
+    $("#results").innerHTML = `<div class="empty">没有命中。负例/无相关内容时这样返回是正确行为（别当成 bug）。</div>`;
+    return;
+  }
+  const rows = res.hits.map((h, i) => {
+    const rr = (h.rerank_score == null) ? `<span class="hint">—</span>` : `<b>${num(h.rerank_score)}</b>`;
+    return `<tr class="hit" data-id="${esc(h.id)}">
+      <td class="num">#${i + 1}</td>
+      <td><div class="txt">${esc(h.text || "")}</div>
+          <div class="id">${esc(h.id)} · ${esc(h.scope || "")}/${esc(h.kind || "")}</div></td>
+      <td class="num">${num(h.score, 4)}</td>
+      <td class="num">${num(h.dense_sim)}</td>
+      <td class="num">${rr}</td>
+      <td>${armChips(h.arms)}</td>
+      <td class="num">${num(h.importance, 1)}</td>
+    </tr>`;
+  }).join("");
+  $("#results").innerHTML = `
+    <div class="hint" style="margin:4px 0 8px">q=<b>${esc(q)}</b>　trace=<code>${esc(res.trace_id || "—")}</code>
+      共 ${res.n ?? res.hits.length} 条（score 是 RRF 融合分，别当相似度；dense_sim 才是余弦）</div>
+    <table><thead><tr>
+      <th>#</th><th>文本</th><th>score</th><th>dense</th><th>rerank</th><th>各臂名次</th><th>imp</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+  document.querySelectorAll("tr.hit").forEach((tr) => {
+    tr.addEventListener("click", () => {
+      document.querySelectorAll("tr.hit").forEach((x) => x.classList.remove("sel"));
+      tr.classList.add("sel");
+      loadNode(tr.dataset.id);
+    });
+  });
+}
+
+async function doRecall(q) {
+  if (!q || !q.trim()) return;
+  const btn = $("#go"); btn.disabled = true; $("#recallMsg").textContent = "召回中…";
+  try {
+    const r = await fetch("/recall", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q, k: 10, scope: $("#scope").value || "" }),
+    });
+    const res = await r.json();
+    if (!res.ok) throw new Error(res.error || "召回失败");
+    $("#recallMsg").textContent = "";
+    renderHits(res, q);
+    // 刚查的这次召回 = 最新的 trace：刷新列表并直接复放它（不然 ⑤ 还停在旧的那次）
+    setCiteBar([]);
+    loadTraces().then(() => { if (res.trace_id) openTrace(res.trace_id); });
+  } catch (e) {
+    $("#recallMsg").innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  } finally { btn.disabled = false; }
+}
+
+/* ---------- 边 ---------- */
+async function loadNode(id) {
+  const box = $("#node");
+  box.innerHTML = `<div class="empty">读边中…</div>`;
+  try {
+    const r = await fetch("/panel/data?node=" + encodeURIComponent(id));
+    const d = await r.json();
+    const n = d.node;
+    if (!n) { box.innerHTML = `<div class="empty">库里没有这个 id：${esc(id)}（可能已 archived）</div>`; return; }
+    const nb = (n.neighbors || []).map((x) => `
+      <tr><td class="num">${num(x.weight, 2)}</td>
+          <td>${esc(x.edge_kind || "")}</td>
+          <td><div class="txt">${esc(x.text || "")}</div><div class="id">${esc(x.id)} · ${esc(x.scope || "")}</div></td></tr>`).join("");
+    box.innerHTML = `
+      <div class="card">
+        <div class="q">${esc(n.text || "")}</div>
+        <div class="hint">${esc(n.id)} · ${esc(n.scope)}/${esc(n.kind)} · importance ${num(n.importance, 2)}
+          · tier ${esc(n.decay_tier)} · S ${esc(n.stability)}d</div>
+      </div>
+      <div class="hint" style="margin:8px 0 4px">邻居 ${(n.neighbors || []).length} 条（按权重降序，最多 12 条；全库共 ${d.db.edges} 行边）</div>
+      ${nb ? `<table><thead><tr><th>权重</th><th>类型</th><th>邻居</th></tr></thead><tbody>${nb}</tbody></table>`
+           : `<div class="empty">这条没有边。</div>`}`;
+  } catch (e) {
+    box.innerHTML = `<div class="err">读边失败：${esc(e.message)}</div>`;
+  }
+}
+
+function renderHubs(d) {
+  $("#hubs").innerHTML = (d.hubs || []).map((h) =>
+    `<span class="pill" data-id="${esc(h.id)}" title="${esc(h.text)}">${esc(h.text.slice(0, 26))} · ${h.deg}</span>`).join("")
+    || `<span class="hint">没有边（edges 为空）。</span>`;
+  document.querySelectorAll("#hubs .pill").forEach((el) =>
+    el.addEventListener("click", () => loadNode(el.dataset.id)));
+}
+
+/* ---------- ⓪ core 块（R6）：GET /core + pin/unpin，实接口 ---------- */
+const SLOT_META = {
+  identity:   { t: "身份", c: "var(--dense)" },
+  rule:       { t: "规则", c: "var(--rr)" },
+  preference: { t: "偏好", c: "var(--bm25)" },
+  project:    { t: "项目", c: "var(--act)" },
+  other:      { t: "其他", c: "#94a3b8" },
+};
+const SLOT_ORDER = ["identity", "rule", "preference", "project", "other"];
+const QS = new URLSearchParams(location.search);
+// budget 可从 URL 调小（`/?budget=200`）——不写库就能验「超预算 → dropped」
+const CORE_BUDGET = Math.max(200, Number(QS.get("budget")) || 1200);
+
+let CORE = null;
+let coreEditing = null;   // 正在行内编辑的 id
+let coreConfirm = null;   // 正在二次确认删除的 id
+let coreBusy = false;
+// unpin 会同时清掉 core_slot（memex/core.py:115），条目就从 /core 的 items 里彻底消失。
+// 面板得留个「刚才移出」的兜底，否则一次误点就再也加不回来。
+let coreRemoved = [];
+
+const slotMeta = (k) => SLOT_META[k] || SLOT_META.other;
+const slotTitle = (k) => slotMeta(k).t;
+
+function flash(msg, bad) {
+  let el = document.getElementById("flash");
+  if (!el) { el = document.createElement("div"); el.id = "flash"; document.body.appendChild(el); }
+  el.className = bad ? "bad" : "ok";
+  el.textContent = msg;
+  el.style.opacity = "1";
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = "0"; }, bad ? 6000 : 2600);
+}
+
+async function api(url, opt) {
+  const r = await fetch(url, opt);
+  let j = null;
+  try { j = await r.json(); } catch (_) { /* 非 JSON 一律当失败 */ }
+  if (!r.ok || !j || j.ok === false) {
+    const e = new Error((j && j.error) || ("HTTP " + r.status));
+    e.status = r.status;
+    throw e;
+  }
+  return j;
+}
+
+async function loadCore() {
+  try {
+    CORE = await api("/core?budget=" + CORE_BUDGET);
+    coreEditing = null; coreConfirm = null;
+    renderCore();
+  } catch (e) {
+    $("#coreHdr").textContent = "";
+    $("#coreBudget").innerHTML = "";
+    $("#coreBody").innerHTML = `<div class="err">读 <code>/core</code> 失败：${esc(e.message)}
+      （服务是旧代码？重启 <code>python -m memex.http --port 8902</code> 后 <code>/core</code> 才存在）</div>`;
+  }
+}
+
+function coreItemHTML(it) {
+  const id = it.id || "";
+  const pinned = !!it.pinned;
+  if (coreEditing === id) {
+    return `<li class="citem" data-id="${esc(id)}">
+      <button class="star on" type="button" disabled>★</button>
+      <div class="cbody">
+        <textarea class="cedit" id="coreEditBox" spellcheck="false">${esc(it.text)}</textarea>
+        <div class="ceditbar">
+          <span><b id="coreEditLen">${(it.text || "").length}</b> 字 · 原 ${it.chars} 字</span>
+          <span class="grow"></span>
+          <button type="button" class="primary" data-act="save">保存</button>
+          <button type="button" data-act="cancel">取消</button>
+        </div>
+      </div>
+    </li>`;
+  }
+  const conf = coreConfirm === id ? `<div class="cconfirm">
+      <span class="grow">删除后本条不再进上下文（软删除，库里留痕）。</span>
+      <button type="button" class="solid" data-act="del-yes">确认删</button>
+      <button type="button" data-act="del-no">取消</button>
+    </div>` : "";
+  return `<li class="citem ${pinned ? "" : "off"}" data-id="${esc(id)}">
+    <button class="star ${pinned ? "on" : ""}" type="button" data-act="pin"
+      title="${pinned ? "已在 core：点击移出（unpin）" : "未进 core：点击加入（pin）"}">${pinned ? "★" : "☆"}</button>
+    <div class="cbody">
+      <div class="ctext">${esc(it.text)}</div>
+      <div class="cmeta"><span>${esc(id.slice(0, 12))}</span><span>${it.chars} 字</span>
+        <span>${pinned ? "pin" : "候选 · 未进上下文"}</span></div>
+      ${conf}
+    </div>
+    <div class="cacts">
+      <button type="button" data-act="edit">编辑</button>
+      <button type="button" class="del" data-act="del">删除</button>
+    </div>
+  </li>`;
+}
+
+function renderCore() {
+  const d = CORE;
+  if (!d) return;
+  const items = d.items || [];
+  const dropped = d.dropped || [];
+  const limit = d.limit || CORE_BUDGET;
+  const chars = d.chars || 0;
+  const pinN = items.filter((i) => i.pinned).length;
+
+  $("#coreHdr").innerHTML =
+    `version <b>${esc(String(d.version || "—").slice(0, 8))}</b>` +
+    `　pinned <b>${pinN}</b> 条` +
+    `　余 <b>${Math.max(0, limit - chars)}</b> 字` +
+    (d.over_budget ? `　<span style="color:#b45309">⚠ 超预算</span>` : "");
+
+  // 预算条：按 slot 顺序分段上色，超出的部分画斜纹（不假装没超）
+  const segs = SLOT_ORDER.map((k) => {
+    const n = items.filter((i) => (i.slot || "other") === k)
+                    .reduce((a, i) => a + (i.chars || 0), 0);
+    return n ? `<i style="width:${(n / limit * 100).toFixed(2)}%;background:${slotMeta(k).c}"></i>` : "";
+  }).join("");
+  const over = chars > limit
+    ? `<i class="over" style="width:${Math.min(100, ((chars - limit) / limit) * 100).toFixed(2)}%"></i>` : "";
+
+  $("#coreBudget").innerHTML = `
+    <div class="bbar">${segs}${over}</div>
+    <div class="bmeta">
+      <span>本次注入 <span class="used">${chars}</span> / ${limit} 字（${((chars / limit) * 100).toFixed(1)}%）</span>
+      <span>${pinN} 条进上下文${dropped.length
+        ? `　<span style="color:var(--warn)">${dropped.length} 条装不下</span>` : ""}</span>
+      <span class="grow"></span>
+      <button type="button" id="coreReload">刷新</button>
+    </div>`;
+
+  const groups = SLOT_ORDER
+    .map((k) => ({ k, list: items.filter((i) => (i.slot || "other") === k) }))
+    .filter((g) => g.list.length);
+
+  const body = groups.map((g) => `
+    <div class="slotblk">
+      <h3><span class="dot" style="background:${slotMeta(g.k).c}"></span>${slotTitle(g.k)}
+        <span class="cnt">${g.list.length} 条 ·
+          ${g.list.reduce((a, i) => a + (i.chars || 0), 0)} 字</span></h3>
+      <ul class="citems">${g.list.map(coreItemHTML).join("")}</ul>
+    </div>`).join("");
+
+  const dropHTML = dropped.length ? `
+    <div class="dropbox">
+      <h3>没进上下文 ${dropped.length} 条（超预算：整条不进，不截断）</h3>
+      <ul>${dropped.map((x) => `<li><code>${esc(String(x.id || "").slice(0, 8))}</code>
+        ${esc(slotTitle(x.slot))} · ${x.chars ?? "?"} 字${x.reason ? " · " + esc(x.reason) : ""}</li>`)
+        .join("")}</ul>
+    </div>` : "";
+
+  $("#coreBody").innerHTML = dropHTML +
+    (body || `<div class="empty">core 块是空的：库里没有 pinned 条目。</div>`) +
+    (coreRemoved.length ? `
+      <div class="gap-note">
+        刚才移出 core ${coreRemoved.length} 条 —— unpin 会连 <code>core_slot</code> 一起清掉，
+        所以本页不再列出它们；点「加回」按原 slot 重新 pin：
+        ${coreRemoved.map((x) => `<div style="margin-top:5px;display:flex;gap:8px;align-items:flex-start">
+          <span style="flex:1">${esc((x.text || "").slice(0, 70))}${(x.text || "").length > 70 ? "…" : ""}</span>
+          <button type="button" data-act="restore" data-id="${esc(x.id)}" data-slot="${esc(x.slot)}"
+            style="flex:0 0 auto;font-size:11px;padding:2px 9px">加回</button>
+        </div>`).join("")}
+      </div>` : "");
+
+  $("#coreReload").addEventListener("click", loadCore);
+
+  if (coreEditing) {
+    const box = $("#coreEditBox");
+    if (box) {
+      box.addEventListener("input", () => { $("#coreEditLen").textContent = box.value.length; });
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    }
+  }
+}
+
+async function corePin(id, slot, wantPin) {
+  if (coreBusy) return;
+  coreBusy = true;
+  try {
+    const r = wantPin
+      ? await api("/core/pin", { method: "POST", headers: { "Content-Type": "application/json" },
+                                 body: JSON.stringify({ id, slot: slot || "other" }) })
+      : await api("/core/unpin", { method: "POST", headers: { "Content-Type": "application/json" },
+                                   body: JSON.stringify({ id }) });
+    if (!wantPin) {
+      const it = ((CORE && CORE.items) || []).find((x) => x.id === id) || {};
+      coreRemoved = coreRemoved.filter((x) => x.id !== id);
+      coreRemoved.push({ id, slot: it.slot || slot || "other", text: it.text || "" });
+    } else {
+      coreRemoved = coreRemoved.filter((x) => x.id !== id);
+    }
+    if (r.core) { CORE = r.core; coreEditing = null; coreConfirm = null; renderCore(); }
+    else await loadCore();
+  } catch (e) {
+    flash((wantPin ? "pin" : "unpin") + " 失败：" + e.message, true);
+  } finally { coreBusy = false; }
+}
+
+/* 编辑/删除走 /memory/<id>（dsh 6deb887 补上的 GET/PUT/DELETE）。
+   PUT 会重新向量化、DELETE 只归档（status=archived，行还在），两者都会让 core version 变。
+   ⚠ id 形如 "1d4ac8f956cb0a6c:1792313081"（带冒号），而 http.py 的 _dispatch 没做 urldecode：
+   用 encodeURIComponent 会变 %3A → 服务端查不到 → 404。所以这里原样拼（id 只含 hex 与冒号）。 */
+async function coreWrite(id, method, body) {
+  const r = await fetch("/memory/" + id, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  let j = null;
+  try { j = await r.json(); } catch (_) {}
+  if (!r.ok || !j || j.ok === false) {
+    throw new Error((j && j.error) || ("HTTP " + r.status));
+  }
+  return j;
+}
+
+async function coreSave(id) {
+  const box = $("#coreEditBox");
+  if (!box) return;
+  const text = box.value.trim();
+  if (!text) { flash("不能存空文本；要下掉这条请点「删除」", true); return; }
+  try {
+    await coreWrite(id, "PUT", { text });
+    coreEditing = null;
+    await loadCore();
+    flash("已保存并重新向量化，core version 已更新");
+  } catch (e) { flash("保存失败：" + e.message, true); }
+}
+
+async function coreDel(id) {
+  try {
+    await coreWrite(id, "DELETE", { reason: "panel-delete" });
+    coreConfirm = null;
+    coreRemoved = coreRemoved.filter((x) => x.id !== id);
+    await loadCore();
+    flash("已归档（status=archived，行还在库里，可恢复）");
+  } catch (e) { flash("删除失败：" + e.message, true); }
+}
+
+$("#coreBody").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const li = btn.closest("li.citem");
+  const id = (li && li.dataset.id) || btn.dataset.id || "";
+  const act = btn.dataset.act;
+  const it = ((CORE && CORE.items) || []).find((x) => x.id === id) || {};
+  if (act === "pin") { corePin(id, it.slot, !it.pinned); return; }
+  if (act === "restore") { corePin(btn.dataset.id, btn.dataset.slot, true); return; }
+  if (act === "edit") { coreEditing = id; coreConfirm = null; renderCore(); return; }
+  if (act === "cancel") { coreEditing = null; renderCore(); return; }
+  if (act === "save") { coreSave(id); return; }
+  if (act === "del") { coreConfirm = id; coreEditing = null; renderCore(); return; }
+  if (act === "del-no") { coreConfirm = null; renderCore(); return; }
+  if (act === "del-yes") { coreDel(id); return; }
+});
+
+/* ---------- ⑤ 最近召回 / 复放 / 引用回写（R7：/traces、/trace/<id>、/feedback） ----------
+   三条硬约束：
+   1) 不轮询 —— 只在 boot、点「刷新」、① 每次召回后拉一次 /traces；
+   2) 回写后就地改（行打勾 + 顶部引用行 + 列表 cited_n+1），不重拉列表、不刷整页；
+   3) 接口挂了就报错不白屏 —— 列表和复放各自兜自己的错。 */
+let TRACES = [];      // /traces 列表
+let TRACE = null;     // 当前复放的明细
+let traceSel = "";    // 选中的 trace_id
+let traceBusy = false;
+
+// id 形如 chunk:e9b720b751 / note:25060af60 / 1d4ac8f956cb0a6c:1792313081 —— 前缀太占地方
+const shortId = (id) => String(id || "").replace(/^(chunk|note|fact|mem|memory):/, "").slice(0, 8);
+
+function setCiteBar(ids) {
+  const box = $("#citeIds");
+  const list = (ids || []).filter(Boolean);
+  if (!list.length) { box.className = "v"; box.textContent = "未回写"; return; }
+  box.className = "v has";
+  box.innerHTML = list.map((i) => `<span class="cid" title="${esc(i)}">${esc(shortId(i))}</span>`).join("") +
+    `<span style="color:var(--muted)">共 ${list.length} 条</span>`;
+}
+
+function renderTraces() {
+  const box = $("#traceList");
+  if (!TRACES.length) {
+    box.innerHTML = `<div class="empty" style="padding:10px">还没有召回记录。上面 ① 查一次，这里就会出现。</div>`;
+    return;
+  }
+  box.innerHTML = TRACES.map((t) => {
+    const raw = (t.query || "").replace(/\s+/g, " ").trim();
+    const q = raw.length > 40 ? raw.slice(0, 40) + "…" : raw;
+    return `<div class="trow ${t.trace_id === traceSel ? "sel" : ""}" data-tid="${esc(t.trace_id)}">
+      <div class="tq">${esc(q || "（空 query）")}</div>
+      <div class="tm">
+        <span>${esc((t.ts_text || "").slice(11) || t.ts_text || "")}</span>
+        <span>命中 ${t.n ?? 0}</span>
+        <span class="cn ${t.cited_n ? "on" : ""}" data-cn="${esc(t.trace_id)}">引用 ${t.cited_n ?? 0}</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function loadTraces() {
+  $("#traceHdr").textContent = "读取中…";
+  try {
+    const d = await api("/traces?limit=20");
+    TRACES = d.traces || [];
+    $("#traceHdr").innerHTML = `最近 <b>${d.n ?? TRACES.length}</b> 次 · 点一条看明细`;
+    renderTraces();
+    // 首屏直接复放最近一次（省一次点击，也免得右边空着像坏了）；已选过别的就不抢
+    if (!traceSel && TRACES.length) openTrace(TRACES[0].trace_id);
+    return TRACES;
+  } catch (e) {
+    $("#traceHdr").textContent = "";
+    $("#traceList").innerHTML = `<div class="err" style="margin:8px">读 <code>/traces</code> 失败：${esc(e.message)}
+      <div class="hint" style="margin-top:4px">服务是旧代码？重启 8902 后 <code>/traces</code> 才存在。</div></div>`;
+    return [];
+  }
+}
+
+async function openTrace(tid) {
+  if (!tid) return;
+  traceSel = tid;
+  document.querySelectorAll("#traceList .trow").forEach((el) =>
+    el.classList.toggle("sel", el.dataset.tid === tid));
+  const box = $("#traceView");
+  box.innerHTML = `<div class="empty">读 /trace/${esc(shortId(tid))}…</div>`;
+  try {
+    const d = await api("/trace/" + tid);
+    TRACE = d;
+    renderTrace();
+    setCiteBar(d.cited || []);
+  } catch (e) {
+    TRACE = null;
+    setCiteBar([]);
+    box.innerHTML = `<div class="err">复放失败：${esc(e.message)}</div>
+      <div class="hint">trace_id=<code>${esc(tid)}</code>；换列表里另一条，或用 ① 重新查一次。</div>`;
+  }
+}
+
+function renderTrace() {
+  const d = TRACE;
+  if (!d) return;
+  const hits = d.hits || [];
+  const citedN = (d.cited || []).length;
+  // 老 trace 的 recall_hits 没有记录 → op_trace 退化成「只有 id」的行（无 score/text）
+  const noDetail = hits.length > 0 && hits.every((h) => h.score == null && !h.text);
+  const rows = hits.map((h) => {
+    const id = h.id || "";
+    const done = !!h.cited;
+    return `<tr class="hrow ${done ? "cited" : ""}" data-hid="${esc(id)}">
+      <td class="num">#${h.rank ?? ""}</td>
+      <td><div class="txt">${esc(h.text || (noDetail ? "（老 trace 无明细，只回放 id）"
+                                                          : "（库里没有正文，只剩 id —— 可能已 archived）"))}</div>
+          <div class="id">${esc(id)} · ${esc(h.scope || "")}${h.kind ? "/" + esc(h.kind) : ""}</div></td>
+      <td class="num">${h.score == null ? "—" : num(h.score, 4)}</td>
+      <td class="num">${h.dense_sim == null ? "—" : num(h.dense_sim)}</td>
+      <td class="num">${h.rerank_score == null ? "—" : num(h.rerank_score)}</td>
+      <td>${noDetail && !(h.arms || []).length ? `<span class="hint">—</span>` : armChips(h.arms)}</td>
+      <td class="num">${done ? `<span class="tick">✓ 用上了</span>`
+        : `<button type="button" class="usebtn" data-act="cite" data-id="${esc(id)}">这条用上了</button>`}</td>
+    </tr>`;
+  }).join("");
+
+  $("#traceView").innerHTML = `
+    <div class="thdr">
+      <span>trace <code id="traceIdText">${esc(d.trace_id)}</code></span>
+      <button type="button" id="copyTid" style="font-size:11px;padding:2px 8px">复制</button>
+      <span id="copyState" class="hint"></span>
+    </div>
+    <div class="card" style="margin-bottom:9px">
+      <div class="q">q = <b>${esc(d.query || "")}</b></div>
+      <div class="hint">${esc(d.ts_text || "")} · 命中 <b>${d.n ?? hits.length}</b> 条 ·
+        已回写 <b id="traceCitedN">${citedN}</b> 条 · policy <b>${esc(d.policy_version ?? "—")}</b>${d.policy_version == null
+          ? `<span style="margin-left:6px">（老 trace 无 policy 记录，不回填）</span>` : ""}</div>
+    </div>
+    ${noDetail ? `<div class="gap-note" style="margin:0 0 9px">
+      老 trace 无明细（<code>recall_hits</code> 里没有这次的记录），只回放 id —— 名次/分数/各臂为空，回写照常可用。`
+      + `<span id="noDetailFlag" style="display:none">1</span></div>` : ""}
+    ${hits.length ? `<table><thead><tr><th>#</th><th>文本（前 200 字）</th><th>score</th>
+        <th>dense</th><th>rerank</th><th>各臂名次</th><th>用上了</th></tr></thead>
+      <tbody>${rows}</tbody></table>`
+    : `<div class="empty">这次召回没有命中（负例）。<code>${esc(d.trace_id)}</code> 仍然记着，方便对时间线。</div>`}`;
+
+  $("#copyTid").addEventListener("click", copyTid);
+}
+
+async function copyTid() {
+  const tid = (TRACE && TRACE.trace_id) || traceSel || "";
+  if (!tid) return false;
+  let ok = false;
+  try { await navigator.clipboard.writeText(tid); ok = true; } catch (_) { ok = false; }
+  if (!ok) {   // 非 https / 无权限时的兜底（headless 里也走这条）
+    const ta = document.createElement("textarea");
+    ta.value = tid; ta.setAttribute("readonly", "");
+    ta.style.cssText = "position:fixed;top:-1000px;opacity:0";
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand("copy"); } catch (_) {}
+    ta.remove();
+  }
+  const st = $("#copyState");
+  if (st) {
+    st.textContent = ok ? "已复制" : "复制失败：手动选中 trace 号";
+    setTimeout(() => { if (st) st.textContent = ""; }, 2200);
+  }
+  return ok;
+}
+
+async function citeHit(id) {
+  if (!TRACE || traceBusy) return;
+  traceBusy = true;
+  try {
+    const r = await api("/feedback", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trace_id: TRACE.trace_id, hit_ids: [id], used: true }),
+    });
+    // 就地更新（不重拉 /traces、不刷整页）
+    const h = (TRACE.hits || []).find((x) => x.id === id);
+    if (h) h.cited = true;
+    TRACE.cited = (TRACE.cited || []).filter((x) => x !== id).concat([id]);
+    const tr = document.querySelector(`#traceView tr.hrow[data-hid="${id}"]`);
+    if (tr) {
+      tr.classList.add("cited");
+      const cell = tr.lastElementChild;
+      if (cell) cell.innerHTML = `<span class="tick">✓ 用上了</span>`;
+    }
+    const cnt = $("#traceCitedN");
+    if (cnt) cnt.textContent = String(TRACE.cited.length);
+    setCiteBar(TRACE.cited);
+    const t = TRACES.find((x) => x.trace_id === TRACE.trace_id);
+    if (t) t.cited_n = (t.cited_n || 0) + 1;
+    const cn = document.querySelector(`#traceList .cn[data-cn="${TRACE.trace_id}"]`);
+    if (cn && t) { cn.textContent = "引用 " + t.cited_n; cn.classList.add("on"); }
+    flash(r.note ? "已回写：" + r.note : "已回写：这条算用上了");
+  } catch (e) {
+    flash("回写失败：" + e.message, true);
+  } finally { traceBusy = false; }
+}
+
+$("#traceList").addEventListener("click", (e) => {
+  const row = e.target.closest(".trow");
+  if (row) openTrace(row.dataset.tid);
+});
+$("#traceView").addEventListener("click", (e) => {
+  const btn = e.target.closest('button[data-act="cite"]');
+  if (btn) citeHit(btn.dataset.id);
+});
+$("#traceReload").addEventListener("click", loadTraces);
+
+async function boot() {
+  // core 独立加载：/panel/data 挂了 core 也得出来（它是首屏最该看见的东西）
+  loadCore();
+  // 最近召回也独立加载：它挂了不影响 ①②③④
+  loadTraces();
+  try {
+    const d = await (await fetch("/panel/data")).json();
+    DATA = d;
+    renderHeader(d); renderKv(d); drawDecay(d.decay); renderHubs(d);
+    window.addEventListener("resize", () => drawDecay(DATA.decay));
+    // 深链：`/?q=端口 9886` 直接跑一次查询。
+    // 不只是方便 —— 截图复现靠它（否则截图里 ① 永远是空表，看的人以为面板坏了）。
+    const q = new URLSearchParams(location.search).get("q");
+    if (q) { $("#q").value = q; doRecall(q); }
+  } catch (e) {
+    $("#chips").innerHTML = chip("读 /panel/data 失败：" + esc(e.message), "warn");
+  }
+}
+
+const PRESETS = ["端口 9886", "老板的预算", "cordis.patch.yml 怎么加 mcp"];
+$("#presets").innerHTML = PRESETS.map((p) => `<button type="button">${esc(p)}</button>`).join("");
+document.querySelectorAll("#presets button").forEach((b) =>
+  b.addEventListener("click", () => { $("#q").value = b.textContent; doRecall(b.textContent); }));
+$("#form").addEventListener("submit", (e) => { e.preventDefault(); doRecall($("#q").value); });
+boot();
+</script>
+</body>
+</html>
