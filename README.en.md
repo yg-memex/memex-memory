@@ -2,11 +2,19 @@
 
 [![ci](https://github.com/yg-memex/memex-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/yg-memex/memex-memory/actions/workflows/ci.yml)
 
-**Memory for AI agents: one SQLite file, local, and it can be verified.** No cloud, no vendor lock-in, no memories silently summarised into something you can't audit.
+**A memory layer for people running several AI agents on one machine: one SQLite file, local, verifiable.** No cloud, no vendor lock-in, no memories silently summarised into something you can't audit.
 
 > Status: **alpha (v0.1.0a1)**. Small API; versioned, self-migrating schema.
 
 中文版：[README.md](README.md)
+
+## Who it is for
+
+**Yes, if:** you run 2+ AI clients on one machine and they don't remember each other; you already keep markdown notes and want agents to read them; you care about privacy and token cost.
+
+**No, if:** you need team memory (accounts, permissions, multi-tenant), a zero-setup app, or cloud sync across devices.
+
+It is not about remembering more. It is about every memory being provable, revertible, and traceable to what was said at the time.
 
 ## What it actually fixes
 
